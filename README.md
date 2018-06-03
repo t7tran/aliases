@@ -69,3 +69,12 @@ ke3 part-of-pod-name bash
 ke3 part-of-pod-name -- ls -al /home
 # ... more in the file
 ```
+
+### Other aliases
+
+```bash
+# hash password using different methods
+hashpassword yourpass
+# generate a random password using openssl
+randompassword
+```
