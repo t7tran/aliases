@@ -13,8 +13,7 @@ curl https://raw.githubusercontent.com/coolersport/aliases/master/.bash_aliases 
 Combining these aliases with .inputrc tweak will probably improve your productivity.
 
 ```
-"\e[A": history-search-backward
-"\e[B": history-search-forward
+curl https://raw.githubusercontent.com/coolersport/aliases/master/.inputrc > ~/.inputrc
 ```
 
 Once ~/.inputrc is created and console is relaunched, type first part of the command then traverse history with up/down arrows.
