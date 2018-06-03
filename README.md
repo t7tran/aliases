@@ -1,7 +1,14 @@
 # aliases
 Useful bash aliases
 
-Place in ~/.bash_aliases and open new terminal or reload with `. ~/.bash_aliases`
+## Installation
+
+Place in ~/.bash_aliases and open new terminal or reload with `. ~/.bash_aliases`.
+The following command will replace ~/.bash_aliases with the latest copy from this repo.
+
+```bash
+curl https://raw.githubusercontent.com/coolersport/aliases/master/.bash_aliases > ~/.bash_aliases
+```
 
 Combining these aliases with .inputrc tweak will probably improve your productivity.
 
