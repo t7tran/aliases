@@ -101,3 +101,32 @@ alias ak='kubectl --all-namespaces=true'
 alias ks0='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=0 deploy'
 alias ks1='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=1 deploy'
 alias ks2='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=2 deploy'
+
+hashpassword() {
+  if [ -z $1 ]; then
+    echo 'Syntax: hashpassword <password>'
+    return 1
+  fi  
+  echo "Password : $1"
+  echo 'Base64   : '`echo -n $1 | base64 -w0`
+  echo 'MD5      : '`echo -n $1 | md5sum | cut -d' ' -f1`
+  echo 'Sha1     : '`echo -n $1 | sha1sum | cut -d' ' -f1`
+  echo 'Sha256   : '`echo -n $1 | sha256sum | cut -d' ' -f1`
+  echo 'BCrypt   : '`htpasswd -bnBC 10 "" $1 | tr -d ':\n' | sed 's/$2y/$2a/'`
+  echo 'Jetty OBF: '`docker run -it --rm coolersport/jetty bash -c 'java -cp lib/jetty-util-*.jar  org.eclipse.jetty.util.security.Password '$1' 2>&1 | grep OBF'`
+}
+
+randompassword() {
+  if [ -z $1 ]; then
+    echo 'Generating random password...'
+    PASS=`openssl rand -base64 27`
+    PASS=${PASS//=/k}
+    PASS=${PASS//+/x}
+    PASS=${PASS//\//y}
+  else
+    echo 'Hashing given base64 password...'
+    PASS=`echo -n $1 | base64 -d`
+  fi  
+
+  hashpassword $PASS
+}
