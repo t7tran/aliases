@@ -42,7 +42,7 @@ alias kps='kp --sort-by=.status.startTime'
 
 podname() {
   checkarg "$1" "Parts of pod name is required"
-  kp --no-headers=true -o custom-columns=:metadata.name | awk '/'$1'/{i++}i=='${2-1}'{print;exit}'
+  kp --no-headers=true -o custom-columns=:metadata.name --sort-by=.status.startTime | tac | awk '/'$1'/{i++}i=='${2-1}'{print;exit}'
 }
 
 alias kpw='watch -tn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide'
