@@ -37,12 +37,16 @@ kp() {
   checkconfig
   kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods $@
 }
+
+alias kps='kp --sort-by=.status.startTime'
+
 podname() {
   checkarg "$1" "Parts of pod name is required"
   kp --no-headers=true -o custom-columns=:metadata.name | awk '/'$1'/{i++}i=='${2-1}'{print;exit}'
 }
 
 alias kpw='watch -tn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide'
+alias kpws='watch -tn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime'
 alias kd='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} describe'
 alias kaf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} apply -f'
 alias kdf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} delete -f'
@@ -106,7 +110,7 @@ hashpassword() {
   if [ -z $1 ]; then
     echo 'Syntax: hashpassword <password>'
     return 1
-  fi  
+  fi
   echo "Password : $1"
   echo 'Base64   : '`echo -n $1 | base64 -w0`
   echo 'MD5      : '`echo -n $1 | md5sum | cut -d' ' -f1`
@@ -126,7 +130,11 @@ randompassword() {
   else
     echo 'Hashing given base64 password...'
     PASS=`echo -n $1 | base64 -d`
-  fi  
+  fi
 
   hashpassword $PASS
+}
+
+erasedups() {
+  tac $HISTFILE | awk '!x[$0]++' | tac | sponge $HISTFILE
 }
