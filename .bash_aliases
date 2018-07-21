@@ -8,6 +8,15 @@ checkconfig() {
 }
 
 alias maven='docker run --privileged -it --rm -v /var/run:/var/run:z -v "$PWD":/src:z -v ~/.m2:/root/.m2:z -v /apps/mvn-repo/:/apps/mvn-repo/:z -v ~/.embedmongo:/root/.embedmongo:z -w /src coolersport/maven:3.2.5-jdk-8 mvn'
+mvnjenkins() {
+  id=`docker run -d -u $(id -u):$(id -g) --entrypoint bash --privileged -it --rm -v /var/run:/var/run:z -v "$PWD":/src:z -v ~/.m2:/home/jenkins/.m2:z -v ~/mvn-repo/:/home/jenkins/mvn-repo/:z -v ~/.embedmongo:/home/jenkins/.embedmongo:z -w /src coolersport/jenkins-slave`
+  docker exec -u root:root $id sed -i 's/10000/1000/g' /etc/passwd
+  docker exec -u root:root $id sed -i 's/10000/1000/g' /etc/group
+  docker exec $id mvn $@
+  docker stop $id
+  docker rm $id
+}
+
 alias d='docker'
 alias di='docker image'
 alias db='docker build'
@@ -42,7 +51,36 @@ alias kps='kp --sort-by=.status.startTime'
 
 podname() {
   checkarg "$1" "Parts of pod name is required"
-  kp --no-headers=true -o custom-columns=:metadata.name --sort-by=.status.startTime | tac | awk '/'$1'/{i++}i=='${2-1}'{print;exit}'
+  name=$1
+  shift
+  no=1
+  if [[ "$1" =~ ^[0-9]+$ ]]; then
+    no=$1
+    shift
+  fi
+  ns=
+  while [[ -n $1 ]]; do
+    if [[ "$1" == '-n' || "$1" == '--namespace' ]]; then ns="-n $2"; break; fi
+    shift
+  done;
+  kp --no-headers=true -o custom-columns=:metadata.name --sort-by=.status.startTime $ns | tac | awk '/'$name'/{i++}i=='${no}'{print;exit}'
+}
+
+podnode() {
+  checkarg "$1" "Parts of pod name is required"
+  name=$1
+  shift
+  no=1
+  if [[ "$1" =~ ^[0-9]+$ ]]; then
+    no=$1
+    shift
+  fi
+  ns=
+  while [[ -n $1 ]]; do
+    if [[ "$1" == '-n' || "$1" == '--namespace' ]]; then ns="-n $2"; break; fi
+    shift
+  done;
+  kp --no-headers=true -o custom-columns=:metadata.name,:spec.nodeName --sort-by=.status.startTime $ns | tac | awk '/'$name'/{i++}i=='${no}'{print;exit}' | grep -oP ' +\K.+$'
 }
 
 alias kpw='watch -tn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide'
@@ -54,44 +92,48 @@ alias kdf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} delete -f'
 ke() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
-  name=`podname $1`
+  name=`podname $@`
   shift
   kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} exec -it ${name:?No pod matched} $@
 }
 ke2() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
-  name=`podname $1 2`
+  a1=$1
   shift
+  name=`podname $a1 2 $@`
   kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} exec -it ${name:?No pod matched} $@
 }
 ke3() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
-  name=`podname $1 3`
+  a1=$1
   shift
+  name=`podname $a1 3 $@`
   kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} exec -it ${name:?No pod matched} $@
 }
 
 kl() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
-  name=`podname $1`
+  name=`podname $@`
   shift
   kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} logs -f ${name:?No pod matched} $@
 }
 kl2() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
-  name=`podname $1 2`
+  a1=$1
   shift
+  name=`podname $a1 2 $@`
   kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} logs -f ${name:?No pod matched} $@
 }
 kl3() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
-  name=`podname $1 3`
+  a1=$1
   shift
+  name=`podname $a1 3 $@`
   kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} logs -f ${name:?No pod matched} $@
 }
 
@@ -102,9 +144,29 @@ kb() {
 }
 
 alias ak='kubectl --all-namespaces=true'
+alias akpw='watch -tn1 kubectl --all-namespaces=true get pods -o wide'
+
 alias ks0='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=0 deploy'
 alias ks1='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=1 deploy'
 alias ks2='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=2 deploy'
+
+ks() {
+
+  kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=$repl deploy $@
+}
+
+akstats() {
+  ( echo -e "NODE\tNAMESPACE\tPOD NAME\tCPU REQUESTED\tMEMORY REQUESTED"; ak get pods -o json | jq -r '.items[]|.spec.nodeName + "\t" + .metadata.namespace + "\t" + .metadata.name + "\t" + (if .spec.containers[0].resources.requests.cpu == null then "-" else .spec.containers[0].resources.requests.cpu end) + "\t" + (if .spec.containers[0].resources.requests.memory == null then "-" else .spec.containers[0].resources.requests.memory end)' | sort ) | column -ts $'\t'
+}
+
+ks() {
+  repl=1
+  if [[ "$1" =~ ^[0-9]+$ ]]; then
+    repl=$1
+    shift
+  fi
+  kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=$repl deploy $@
+}
 
 hashpassword() {
   if [ -z $1 ]; then
