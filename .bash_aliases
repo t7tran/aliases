@@ -21,6 +21,7 @@ alias d='docker'
 alias di='docker image'
 alias db='docker build'
 
+# stop and remove docker containers, if no container IDs provided, all containers will be stopped (if running) and removed
 drm() {
   if [[ -z "$@" ]]; then
     docker stop `docker ps --format={{.Names}}` 2>/dev/null
@@ -30,25 +31,47 @@ drm() {
   fi
 }
 
+# run a container with current directory mapped to /pwd
 alias dr='docker run -it --rm -v "$PWD":/pwd:z'
+# execute a command inside a container
 alias de='docker exec -it'
+# view and follow log of a container
 alias dl='docker logs -f'
+# view stats of all running containers with name column
 alias ds='docker stats $(docker ps --format={{.Names}})'
 
 alias dc='docker-compose'
 alias dcf='docker-compose -f'
 
 alias bfg='java -jar /apps/bfg-1.12.16.jar'
+
+# short-form of kubectl against current namespace
 alias k='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE}'
+# list all resources of the current namespace
 alias ka='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get all'
 
+# list all pods (or those matching given parameters) of current namespace
 kp() {
   checkconfig
-  kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods $@
+  if [[ -z "$@" ]]; then
+    k get pods $@
+  else
+    k get pods | grep -E -- `echo $@ | tr ' ' '|'`
+  fi
 }
 
-alias kps='kp --sort-by=.status.startTime'
+# list all pods (or those matching given parameters) of current namespace sorted by created time
+kps() {
+  checkconfig
+  if [[ -z "$@" ]]; then
+    k get pods --sort-by=.status.startTime $@
+  else
+    k get pods --sort-by=.status.startTime | grep -E -- `echo $@ | tr ' ' '|'`
+  fi  
+}
 
+# find the most recent pod whose name matches the parameter
+# if the first parameter is a number n, it will find the nth most recent pod
 podname() {
   checkarg "$1" "Parts of pod name is required"
   name=$1
@@ -59,13 +82,15 @@ podname() {
     shift
   fi
   ns=
-  while [[ -n $1 ]]; do
+  while [[ -n $1 ]]; do 
     if [[ "$1" == '-n' || "$1" == '--namespace' ]]; then ns="-n $2"; break; fi
     shift
   done;
-  kp --no-headers=true -o custom-columns=:metadata.name --sort-by=.status.startTime $ns | tac | awk '/'$name'/{i++}i=='${no}'{print;exit}'
+  k get pods --no-headers=true -o custom-columns=:metadata.name --sort-by=.status.startTime $ns | tac | awk '/'$name'/{i++}i=='${no}'{print;exit}'
 }
 
+# find the node name which the most recent matching pod name is running on
+# if the first parameter is a number n, it will find the nth most recent pod
 podnode() {
   checkarg "$1" "Parts of pod name is required"
   name=$1
@@ -74,52 +99,73 @@ podnode() {
   if [[ "$1" =~ ^[0-9]+$ ]]; then
     no=$1
     shift
-  fi
-  ns=
-  while [[ -n $1 ]]; do
+  fi  
+  ns= 
+  while [[ -n $1 ]]; do 
     if [[ "$1" == '-n' || "$1" == '--namespace' ]]; then ns="-n $2"; break; fi
     shift
   done;
-  kp --no-headers=true -o custom-columns=:metadata.name,:spec.nodeName --sort-by=.status.startTime $ns | tac | awk '/'$name'/{i++}i=='${no}'{print;exit}' | grep -oP ' +\K.+$'
+  k get pods --no-headers=true -o custom-columns=:metadata.name,:spec.nodeName --sort-by=.status.startTime $ns | tac | awk '/'$name'/{i++}i=='${no}'{print;exit}' | grep -oP ' +\K.+$'
 }
 
+# list all pods in the current namespace using wide output format
 alias kpw='watch -tn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide'
-alias kpws='watch -tn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime'
+# list all pods in the current namespace using wide output format sorted by created time
+#alias kpws='watch -tn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime'
+kpws() {
+  if [[ -z "$@" ]]; then
+    watch -cetn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime
+  else
+    watch -cetn1 "kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime | grep --color=always -E -- `echo $@ | tr ' ' '|'`"
+  fi
+}
+# describe a resource
 alias kd='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} describe'
+# create/update resources described in one or more yaml files
 alias kaf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} apply -f'
+# delete resources described in one or more yaml files
 alias kdf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} delete -f'
 
+# force delete one or more pods
+kdpf() {
+  k delete po --grace-period=0 --force $@
+}
+
+# execute a command on the most recent pod whose name matches the first parameter
 ke() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
   name=`podname $@`
   shift
-  kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} exec -it ${name:?No pod matched} $@
+  k exec -it ${name:?No pod matched} $@
 }
+# execute a command on the second most recent pod whose name matches the first parameter
 ke2() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
   a1=$1
   shift
   name=`podname $a1 2 $@`
-  kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} exec -it ${name:?No pod matched} $@
+  k exec -it ${name:?No pod matched} $@
 }
+# execute a command on the third most recent pod whose name matches the first parameter
 ke3() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
   a1=$1
   shift
   name=`podname $a1 3 $@`
-  kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} exec -it ${name:?No pod matched} $@
+  k exec -it ${name:?No pod matched} $@
 }
-
+# view and follow log of the most recent pod whose name matches the first parameter
 kl() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
   name=`podname $@`
   shift
-  kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} logs -f ${name:?No pod matched} $@
+  k logs -f ${name:?No pod matched} $@
 }
+# view and follow log of the second most recent pod whose name matches the first parameter
 kl2() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
@@ -128,6 +174,7 @@ kl2() {
   name=`podname $a1 2 $@`
   kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} logs -f ${name:?No pod matched} $@
 }
+# view and follow log of the third most recent pod whose name matches the first parameter
 kl3() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
@@ -137,37 +184,47 @@ kl3() {
   kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} logs -f ${name:?No pod matched} $@
 }
 
-kb() {
-  [[ -z $2 ]] && LABELS=$1 || LABELS=$2
-  [[ -z $2 ]] && NS="${KUBENAMESPACE:+--namespace $KUBENAMESPACE}" || NS="-n $1"
-  kubectl exec -it `kubectl get pods -o go-template --template \'{{range .items}}{{.metadata.name}}{{"\\n"}}{{end}}\' -l "$LABELS" $NS` $NS bash
-}
-
+# run kubectl against all namespaces
 alias ak='kubectl --all-namespaces=true'
+# watch pods on all namespaces
 alias akpw='watch -tn1 kubectl --all-namespaces=true get pods -o wide'
 
-alias ks0='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=0 deploy'
-alias ks1='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=1 deploy'
-alias ks2='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=2 deploy'
-
-ks() {
-
-  kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=$repl deploy $@
-}
-
+# running stats on CPU & MEMORY requested by all pods
 akstats() {
   ( echo -e "NODE\tNAMESPACE\tPOD NAME\tCPU REQUESTED\tMEMORY REQUESTED"; ak get pods -o json | jq -r '.items[]|.spec.nodeName + "\t" + .metadata.namespace + "\t" + .metadata.name + "\t" + (if .spec.containers[0].resources.requests.cpu == null then "-" else .spec.containers[0].resources.requests.cpu end) + "\t" + (if .spec.containers[0].resources.requests.memory == null then "-" else .spec.containers[0].resources.requests.memory end)' | sort ) | column -ts $'\t'
 }
 
+# scale one or more deployments to a specified number of replicas (first parameter)
 ks() {
   repl=1
   if [[ "$1" =~ ^[0-9]+$ ]]; then
     repl=$1
     shift
-  fi
+  fi  
   kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=$repl deploy $@
 }
 
+# scale one or more deployments to 0 replicas
+alias ks0='ks 0'
+# scale one or more deployments to 1 replica
+alias ks1='ks 1'
+# scale one or more deployments to 2 replicas
+alias ks2='ks 2'
+
+#https://github.com/kubernetes/kubernetes/issues/17512#issuecomment-317757388
+kutil() {
+  k get nodes --no-headers | awk '{print $1}' | xargs -I {} sh -c 'echo {} ; kubectl describe node {} | grep Allocated -A 5 | grep -ve Event -ve Allocated -ve percent -ve -- ; echo '
+}
+
+kcpualloc() {
+  kutil | grep % | awk '{print $1}' | awk '{ sum += $1 } END { if (NR > 0) { print sum/(NR*40), "%\n" } }'
+}
+
+kmemalloc() {
+  kutil | grep % | awk '{print $5}' | awk '{ sum += $1 } END { if (NR > 0) { print sum/(NR*150), "%\n" } }'
+}
+
+# compute password hash using different algorithms
 hashpassword() {
   if [ -z $1 ]; then
     echo 'Syntax: hashpassword <password>'
@@ -182,6 +239,7 @@ hashpassword() {
   echo 'Jetty OBF: '`docker run -it --rm coolersport/jetty bash -c 'java -cp lib/jetty-util-*.jar  org.eclipse.jetty.util.security.Password '$1' 2>&1 | grep OBF'`
 }
 
+# generate a random password with different hashing algorithms
 randompassword() {
   if [ -z $1 ]; then
     echo 'Generating random password...'
@@ -197,6 +255,7 @@ randompassword() {
   hashpassword $PASS
 }
 
+# erase all duplicate commands in bash history
 erasedups() {
   tac $HISTFILE | awk '!x[$0]++' | tac | sponge $HISTFILE
 }
