@@ -18,6 +18,17 @@ curl https://raw.githubusercontent.com/coolersport/aliases/master/.inputrc > ~/.
 
 Once ~/.inputrc is created and console is relaunched, type first part of the command then traverse history with up/down arrows.
 
+Display current kubeconfig and namespace which are read by kubectl and the aliases. Remember to logout and login for it to load.
+
+```
+curl https://raw.githubusercontent.com/coolersport/aliases/master/kube_prompt.sh > ~/.kube_prompt.sh && echo '. ~/.kube_prompt.sh' > ~/.bashrc
+```
+
+Then before working with a cluster, export the variables with desired values:
+```
+export KUBECONFIG=~/.kube/config.production KUBENAMESPACE=production-namespace
+```
+
 ### Docker aliases
 
 ```bash
