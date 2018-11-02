@@ -33,8 +33,4 @@ function kube() {
     fi
 }
 
-function set_prompt() {
-    PS1='$(kube)$\e[0m \e[1m$(limited_pwd)\e[0m '
-}
-
-PROMPT_COMMAND=set_prompt
+export PS1='$(kube)\e[0m \e[1m$(limited_pwd)\e[0m$ '
