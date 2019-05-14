@@ -17,6 +17,8 @@ mvnjenkins() {
   docker rm $id
 }
 
+alias watch='watch -tn1 '
+
 alias d='docker'
 alias di='docker image'
 alias db='docker build'
@@ -33,6 +35,7 @@ drm() {
 
 # run a container with current directory mapped to /pwd
 alias dr='docker run -it --rm -v "$PWD":/pwd:z'
+alias drw='docker run -it --rm -v "$PWD":/pwd:z -w /pwd'
 # execute a command inside a container
 alias de='docker exec -it'
 # view and follow log of a container
@@ -42,8 +45,8 @@ alias ds='docker stats $(docker ps --format={{.Names}})'
 
 alias dc='docker-compose'
 alias dcf='docker-compose -f'
-
-alias bfg='java -jar /apps/bfg-1.12.16.jar'
+alias dcl='docker-compose logs -f'
+alias dce='docker-compose exec'
 
 # short-form of kubectl against current namespace
 alias k='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE}'
@@ -114,9 +117,9 @@ alias kpw='watch -tn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get p
 #alias kpws='watch -tn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime'
 kpws() {
   if [[ -z "$@" ]]; then
-    watch -cetn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime
+    watch -ctn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime
   else
-    watch -cetn1 "kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime | grep --color=always -E -- `echo $@ | tr ' ' '|'`"
+    watch -ctn1 "kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime | grep --color=always -E -- `echo $@ | tr ' ' '|'`"
   fi
 }
 # describe a resource
@@ -129,6 +132,13 @@ alias kdf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} delete -f'
 # force delete one or more pods
 kdpf() {
   k delete po --grace-period=0 --force $@
+}
+kdpe() {
+  if [[ $1 != 'Error' && $1 != 'Evicted' ]]; then
+    echo "Please specify 'Error' or 'Evicted' pods to be deleted."
+    return
+  fi
+  k delete po `kp $1 | grep -oP '^[^ ]+' | tr '\n' ' '`
 }
 
 # execute a command on the most recent pod whose name matches the first parameter
@@ -163,7 +173,7 @@ kl() {
   checkarg "$1" "Parts of pod name is required"
   name=`podname $@`
   shift
-  k logs -f ${name:?No pod matched} $@
+  k logs -f ${name:?No pod matched} --tail=200 $@
 }
 # view and follow log of the second most recent pod whose name matches the first parameter
 kl2() {
@@ -172,7 +182,7 @@ kl2() {
   a1=$1
   shift
   name=`podname $a1 2 $@`
-  kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} logs -f ${name:?No pod matched} $@
+  k logs -f ${name:?No pod matched} --tail=200 $@
 }
 # view and follow log of the third most recent pod whose name matches the first parameter
 kl3() {
@@ -181,7 +191,7 @@ kl3() {
   a1=$1
   shift
   name=`podname $a1 3 $@`
-  kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} logs -f ${name:?No pod matched} $@
+  k logs -f ${name:?No pod matched} --tail=200 $@
 }
 
 # run kubectl against all namespaces
@@ -201,7 +211,7 @@ ks() {
     repl=$1
     shift
   fi  
-  kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} scale --replicas=$repl deploy $@
+  k scale --replicas=$repl deploy $@
 }
 
 # scale one or more deployments to 0 replicas
@@ -210,6 +220,8 @@ alias ks0='ks 0'
 alias ks1='ks 1'
 # scale one or more deployments to 2 replicas
 alias ks2='ks 2'
+# scale one or more deployments to 3 replicas
+alias ks3='ks 3'
 
 #https://github.com/kubernetes/kubernetes/issues/17512#issuecomment-317757388
 kutil() {
@@ -236,7 +248,8 @@ hashpassword() {
   echo 'Sha1     : '`echo -n $1 | sha1sum | cut -d' ' -f1`
   echo 'Sha256   : '`echo -n $1 | sha256sum | cut -d' ' -f1`
   echo 'BCrypt   : '`htpasswd -bnBC 10 "" $1 | tr -d ':\n' | sed 's/$2y/$2a/'`
-  echo 'Jetty OBF: '`docker run -it --rm coolersport/jetty bash -c 'java -cp lib/jetty-util-*.jar  org.eclipse.jetty.util.security.Password '$1' 2>&1 | grep OBF'`
+  echo -n 'Jetty OBF: '
+  echo `docker run -it --rm coolersport/jetty bash -c 'java -cp lib/jetty-util-*.jar  org.eclipse.jetty.util.security.Password '$1' 2>&1 | grep OBF'`
 }
 
 # generate a random password with different hashing algorithms
@@ -253,6 +266,17 @@ randompassword() {
   fi
 
   hashpassword $PASS
+}
+randompasswords() {
+  for i in {1..10}; do
+    PASS=`openssl rand -base64 27`
+    PASS=${PASS//=/k}
+    PASS=${PASS//+/x}
+    PASS=${PASS//\//y}
+    echo -n "$i. "
+    echo -n $PASS | base64 -w0
+    echo
+  done
 }
 
 # erase all duplicate commands in bash history
