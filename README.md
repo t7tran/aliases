@@ -29,7 +29,7 @@ Then before working with a cluster, export the variables with desired values:
 export KUBECONFIG=~/.kube/config.production KUBENAMESPACE=production-namespace
 ```
 
-[![asciicast](https://asciinema.org/a/Vnk04Yp3eSGvk0fE8Ysg4HKHJ.svg)](https://asciinema.org/a/Vnk04Yp3eSGvk0fE8Ysg4HKHJ)
+[![asciicast](https://asciinema.org/a/246242.svg)](https://asciinema.org/a/246242)
 
 ### Docker aliases
 
