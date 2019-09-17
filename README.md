@@ -91,3 +91,9 @@ hashpassword yourpass
 # generate a random password using openssl
 randompassword
 ```
+
+### tmux
+
+Just install tmux and copy `.tmux.conf` into your home directory. Then watch the terminal cast below.
+
+[![asciicast](https://asciinema.org/a/uik4MtmWSymiwiHUX47tmXByp.svg)](https://asciinema.org/a/uik4MtmWSymiwiHUX47tmXByp)
