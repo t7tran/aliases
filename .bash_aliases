@@ -35,6 +35,9 @@ drm() {
 
 # run a container with current directory mapped to /pwd
 alias dr='docker run -it --rm -v "$PWD":/pwd:z'
+alias drs='docker run -it --rm -v "$PWD":/pwd:z --entrypoint sh'
+alias drb='docker run -it --rm -v "$PWD":/pwd:z --entrypoint bash'
+alias dru='docker run -u $(id -u):$(id -g) -it --rm -v "$PWD":/pwd:z'
 alias drw='docker run -it --rm -v "$PWD":/pwd:z -w /pwd'
 # execute a command inside a container
 alias de='docker exec -it'
@@ -43,15 +46,65 @@ alias dl='docker logs -f'
 # view stats of all running containers with name column
 alias ds='docker stats $(docker ps --format={{.Names}})'
 
-alias dc='docker-compose'
+dc() {
+  if [[ -f run-config/docker-compose.yml ]]; then
+    docker-compose -f run-config/docker-compose.yml "$@"
+  else
+    docker-compose "$@"
+  fi
+}
+
 alias dcf='docker-compose -f'
-alias dcl='docker-compose logs -f'
-alias dce='docker-compose exec'
+alias dcl='dc logs -f'
+alias dce='dc exec'
+
+alias dt='docker stack'
+alias dtd='docker stack deploy -c docker-compose.yml'
+
+# find image tags on docker hub
+dhub() {
+  image=$1
+  tag=$2
+  notfound="Image $image not found."
+  [[ $image == */* ]] || image=library/$image
+  url="https://hub.docker.com/v2/repositories/$image/tags/?page_size=100&page=1"
+  while [[ $url == http* ]]; do
+    json=`curl -s -H "Authorization: JWT " "$url"`
+    [[ $json == '{"detail": "'* ]] && echo $notfound && break
+    notfound=
+    if [[ -n $tag ]]; then
+      line=`echo $json | jq -r '.results[] | .name + " " + (.images[0].size | tostring)' | grep "^$tag "`
+      if [[ $? -eq 0 ]]; then
+        echo "$tag = `echo $line | grep -oP '[0-9]+$' | numfmt --to=iec-i`"
+        break
+      else
+        echo -n '.'
+      fi
+    else
+      echo $json | jq -r '.results[] | .name + " " + (.images[0].size | tostring)' | while IFS= read -r line; do
+        echo "`echo $line | cut -d ' ' -f 1` = `echo $line | grep -oP '[0-9]+$' | numfmt --to=iec-i`"
+      done
+    fi
+    url=`echo $json | jq -r '.next'`
+  done
+}
 
 # short-form of kubectl against current namespace
 alias k='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE}'
 # list all resources of the current namespace
 alias ka='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get all'
+
+kns() {
+  if [[ -n "$1" ]]; then
+    export KUBENAMESPACE=$1
+  else
+    options=(`k get ns --no-headers=true -o custom-columns=:metadata.name --sort-by=.metadata.name`)
+    select_option "${options[@]}"
+    ns=$?
+    export KUBENAMESPACE=${options[$ns]}
+    [[ "$KUBENAMESPACE" == 'default' ]] && export KUBENAMESPACE=
+  fi
+}
 
 # list all pods (or those matching given parameters) of current namespace
 kp() {
@@ -117,13 +170,22 @@ alias kpw='watch -tn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get p
 #alias kpws='watch -tn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime'
 kpws() {
   if [[ -z "$@" ]]; then
-    watch -ctn1 kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime
+    watch -ctn1 "kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime | awk {'print "'$1" " $2" " $3" " $4" " $5" " $6" " $7'"'} | column -t"
   else
-    watch -ctn1 "kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime | grep --color=always -E -- `echo $@ | tr ' ' '|'`"
+    filter=`echo "NAME $@" | tr ' ' '|'`
+    watch -ctn1 "kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime | awk {'print "'$1" " $2" " $3" " $4" " $5" " $6" " $7'"'} | column -t | grep --color=always -E -- '$filter'"
   fi
 }
 # describe a resource
 alias kd='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} describe'
+kdpo() {
+  checkconfig
+  checkarg "$1" "Parts of pod name is required"
+  name=`podname $@`
+  shift
+  kd po ${name:?No pod matched}
+}
+
 # create/update resources described in one or more yaml files
 alias kaf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} apply -f'
 # delete resources described in one or more yaml files
@@ -173,7 +235,7 @@ kl() {
   checkarg "$1" "Parts of pod name is required"
   name=`podname $@`
   shift
-  k logs -f ${name:?No pod matched} --tail=200 $@
+  k logs -f ${name:?No pod matched} --tail=2000 $@
 }
 # view and follow log of the second most recent pod whose name matches the first parameter
 kl2() {
@@ -182,7 +244,7 @@ kl2() {
   a1=$1
   shift
   name=`podname $a1 2 $@`
-  k logs -f ${name:?No pod matched} --tail=200 $@
+  k logs -f ${name:?No pod matched} --tail=2000 $@
 }
 # view and follow log of the third most recent pod whose name matches the first parameter
 kl3() {
@@ -191,7 +253,7 @@ kl3() {
   a1=$1
   shift
   name=`podname $a1 3 $@`
-  k logs -f ${name:?No pod matched} --tail=200 $@
+  k logs -f ${name:?No pod matched} --tail=2000 $@
 }
 
 # run kubectl against all namespaces
@@ -236,6 +298,36 @@ kmemalloc() {
   kutil | grep % | awk '{print $5}' | awk '{ sum += $1 } END { if (NR > 0) { print sum/(NR*150), "%\n" } }'
 }
 
+alias h='helm'
+alias htf='helm template "../${PWD##*/}" --output-dir build -f'
+
+ht() {
+  if [[ -n "$@" ]]; then
+    helm template "$@"
+  elif [[ "$1" == '-f' && $# -eq 2 ]]; then
+    helm template "../${PWD##*/}" --output-dir build "$@"
+  elif [[ -d templates && -f Chart.yaml ]]; then
+    helm template "../${PWD##*/}" --output-dir build
+  else
+    echo "The current directory isn't a helm chart"
+  fi
+}
+
+alias t='terraform'
+alias tp='terraform plan'
+alias ta='terraform apply'
+alias tay='terraform apply -auto-approve'
+alias ti='terraform import'
+tpt() {
+  terraform plan -target=$1
+}
+tat() {
+  terraform apply -target=$1
+}
+taty() {
+  terraform apply -auto-approve -target=$1
+}
+
 # compute password hash using different algorithms
 hashpassword() {
   if [ -z $1 ]; then
@@ -248,18 +340,25 @@ hashpassword() {
   echo 'Sha1     : '`echo -n $1 | sha1sum | cut -d' ' -f1`
   echo 'Sha256   : '`echo -n $1 | sha256sum | cut -d' ' -f1`
   echo 'BCrypt   : '`htpasswd -bnBC 10 "" $1 | tr -d ':\n' | sed 's/$2y/$2a/'`
-  echo -n 'Jetty OBF: '
-  echo `docker run -it --rm coolersport/jetty bash -c 'java -cp lib/jetty-util-*.jar  org.eclipse.jetty.util.security.Password '$1' 2>&1 | grep OBF'`
+  read -p 'Jetty OBF: (y/N) ' obf
+  [[ "$obf" == 'y' || "$obf" == 'Y' ]] && echo `docker run -it --rm coolersport/jetty bash -c 'java -cp lib/jetty-util-*.jar  org.eclipse.jetty.util.security.Password '$1' 2>&1 | grep OBF'`
 }
 
 # generate a random password with different hashing algorithms
+randompasswordstring() {
+  for i in {1..100}; do
+    PASS=`openssl rand -base64 17`
+    PASS=${PASS//=/@}
+    PASS=${PASS//+/@}
+    PASS=${PASS//\//@}
+    [[ "$PASS" == *@* ]] && break
+  done
+  echo $PASS
+}
 randompassword() {
   if [ -z $1 ]; then
     echo 'Generating random password...'
-    PASS=`openssl rand -base64 27`
-    PASS=${PASS//=/k}
-    PASS=${PASS//+/x}
-    PASS=${PASS//\//y}
+    PASS=`randompasswordstring`
   else
     echo 'Hashing given base64 password...'
     PASS=`echo -n $1 | base64 -d`
@@ -269,10 +368,7 @@ randompassword() {
 }
 randompasswords() {
   for i in {1..10}; do
-    PASS=`openssl rand -base64 27`
-    PASS=${PASS//=/k}
-    PASS=${PASS//+/x}
-    PASS=${PASS//\//y}
+    PASS=`randompasswordstring`
     echo -n "$i. "
     echo -n $PASS | base64 -w0
     echo
@@ -281,5 +377,66 @@ randompasswords() {
 
 # erase all duplicate commands in bash history
 erasedups() {
-  tac $HISTFILE | awk '!x[$0]++' | tac | sponge $HISTFILE
+  tac $HISTFILE | awk '!x[$0]++' | tac | grep -vP '^(.+[ \t]|(ll|ls|mv|cd|cp|rm|mkdir|echo|cat|kdpf|vi|php|grep|alias) .+|(exit|history).*)$' | sponge $HISTFILE
+}
+
+# https://unix.stackexchange.com/questions/146570/arrow-key-enter-menu
+select_option() {
+
+    # little helpers for terminal print control and key input
+    ESC=$( printf "\033")
+    cursor_blink_on()  { printf "$ESC[?25h"; }
+    cursor_blink_off() { printf "$ESC[?25l"; }
+    cursor_to()        { printf "$ESC[$1;${2:-1}H"; }
+    print_option()     { printf "   $1 "; }
+    print_selected()   { printf "  $ESC[7m $1 $ESC[27m"; }
+    get_cursor_row()   { IFS=';' read -sdR -p $'\E[6n' ROW COL; echo ${ROW#*[}; }
+    key_input()        { read -s -n3 key 2>/dev/null >&2
+                         if [[ $key = $ESC[A ]]; then echo up;    fi
+                         if [[ $key = $ESC[B ]]; then echo down;  fi
+                         if [[ $key = ""     ]]; then echo enter; fi; }
+
+    # initially print empty new lines (scroll down if at bottom of screen)
+    for opt; do printf "\n"; done
+
+    # determine current screen position for overwriting the options
+    local lastrow=`get_cursor_row`
+    local startrow=$(($lastrow - $#))
+
+    # ensure cursor and input echoing back on upon a ctrl+c during read -s
+    trap "cursor_blink_on; stty echo; printf '\n'; exit" 2
+    cursor_blink_off
+
+    local selected=0
+    while true; do
+        # print options by overwriting the last lines
+        local idx=0
+        for opt; do
+            cursor_to $(($startrow + $idx))
+            if [ $idx -eq $selected ]; then
+                print_selected "$opt"
+            else
+                print_option "$opt"
+            fi
+            ((idx++))
+        done
+
+        # user key control
+        case `key_input` in
+            enter) break;;
+            up)    ((selected--));
+                   if [ $selected -lt 0 ]; then selected=$(($# - 1)); fi;;
+            down)  ((selected++));
+                   if [ $selected -ge $# ]; then selected=0; fi;;
+        esac
+    done
+
+    # cursor position back to normal
+    cursor_to $lastrow
+    printf "\n"
+    cursor_blink_on
+
+    trap - 2
+
+    return $selected
 }
