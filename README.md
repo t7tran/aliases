@@ -7,13 +7,13 @@ Place in ~/.bash_aliases and open new terminal or reload with `. ~/.bash_aliases
 The following command will replace ~/.bash_aliases with the latest copy from this repo.
 
 ```bash
-curl https://raw.githubusercontent.com/coolersport/aliases/master/.bash_aliases > ~/.bash_aliases
+curl https://raw.githubusercontent.com/t7tran/aliases/master/.bash_aliases > ~/.bash_aliases
 ```
 
 Combining these aliases with .inputrc tweak will probably improve your productivity.
 
 ```
-curl https://raw.githubusercontent.com/coolersport/aliases/master/.inputrc > ~/.inputrc
+curl https://raw.githubusercontent.com/t7tran/aliases/master/.inputrc > ~/.inputrc
 ```
 
 Once ~/.inputrc is created and console is relaunched, type first part of the command then traverse history with up/down arrows.
@@ -21,7 +21,7 @@ Once ~/.inputrc is created and console is relaunched, type first part of the com
 Display current kubeconfig and namespace which are read by kubectl and the aliases. Remember to logout and login for it to load.
 
 ```
-curl https://raw.githubusercontent.com/coolersport/aliases/master/kube_prompt.sh > ~/.kube_prompt.sh && echo '. ~/.kube_prompt.sh' > ~/.bashrc
+curl https://raw.githubusercontent.com/t7tran/aliases/master/kube_prompt.sh > ~/.kube_prompt.sh && echo '. ~/.kube_prompt.sh' > ~/.bashrc
 ```
 
 Then before working with a cluster, export the variables with desired values:

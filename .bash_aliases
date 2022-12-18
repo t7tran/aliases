@@ -1,4 +1,4 @@
-# sync with https://github.com/coolersport/aliases
+# sync with https://github.com/t7tran/aliases
 
 checkarg() {
   if [[ -z "$1" ]]; then echo $2; kill -INT $$; fi
