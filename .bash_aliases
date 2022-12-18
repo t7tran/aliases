@@ -9,7 +9,7 @@ checkconfig() {
 
 alias maven='docker run --privileged -it --rm -v /var/run:/var/run:z -v "$PWD":/src:z -v ~/.m2:/root/.m2:z -v /apps/mvn-repo/:/apps/mvn-repo/:z -v ~/.embedmongo:/root/.embedmongo:z -w /src coolersport/maven:3.2.5-jdk-8 mvn'
 mvnjenkins() {
-  id=`docker run -d -u $(id -u):$(id -g) --entrypoint bash --privileged -it --rm -v /var/run:/var/run:z -v "$PWD":/src:z -v ~/.m2:/home/jenkins/.m2:z -v ~/mvn-repo/:/home/jenkins/mvn-repo/:z -v ~/.embedmongo:/home/jenkins/.embedmongo:z -w /src coolersport/jenkins-slave`
+  local id=`docker run -d -u $(id -u):$(id -g) --entrypoint bash --privileged -it --rm -v /var/run:/var/run:z -v "$PWD":/src:z -v ~/.m2:/home/jenkins/.m2:z -v ~/mvn-repo/:/home/jenkins/mvn-repo/:z -v ~/.embedmongo:/home/jenkins/.embedmongo:z -w /src coolersport/jenkins-slave`
   docker exec -u root:root $id sed -i 's/10000/1000/g' /etc/passwd
   docker exec -u root:root $id sed -i 's/10000/1000/g' /etc/group
   docker exec $id mvn $@
@@ -45,10 +45,15 @@ alias de='docker exec -it'
 alias dl='docker logs -f'
 # view stats of all running containers with name column
 alias ds='docker stats $(docker ps --format={{.Names}})'
+alias dips='docker inspect -f "{{.Name}} - {{.NetworkSettings.IPAddress }}" $(docker ps -aq)'
 
 dc() {
   if [[ -f run-config/docker-compose.yml ]]; then
-    docker-compose -f run-config/docker-compose.yml "$@"
+    docker-compose --project-directory run-config -f run-config/docker-compose.yml "$@"
+  elif [[ -x run-config/docker-compose.sh ]]; then
+    ./run-config/docker-compose.sh "$@"
+  elif [[ -x docker-compose.sh ]]; then
+    ./docker-compose.sh "$@"
   else
     docker-compose "$@"
   fi
@@ -57,23 +62,24 @@ dc() {
 alias dcf='docker-compose -f'
 alias dcl='dc logs -f'
 alias dce='dc exec'
+alias dcips='docker inspect -f "{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" $(docker ps -aq)'
 
 alias dt='docker stack'
 alias dtd='docker stack deploy -c docker-compose.yml'
 
 # find image tags on docker hub
 dhub() {
-  image=$1
-  tag=$2
-  notfound="Image $image not found."
+  local image=$1
+  local tag=$2
+  local notfound="Image $image not found."
   [[ $image == */* ]] || image=library/$image
-  url="https://hub.docker.com/v2/repositories/$image/tags/?page_size=100&page=1"
+  local url="https://hub.docker.com/v2/repositories/$image/tags/?page_size=100&page=1"
   while [[ $url == http* ]]; do
-    json=`curl -s -H "Authorization: JWT " "$url"`
+    local json=`curl -s -H "Authorization: JWT " "$url"`
     [[ $json == '{"detail": "'* ]] && echo $notfound && break
     notfound=
     if [[ -n $tag ]]; then
-      line=`echo $json | jq -r '.results[] | .name + " " + (.images[0].size | tostring)' | grep "^$tag "`
+      local line=`echo $json | jq -r '.results[] | .name + " " + (.images[0].size | tostring)' | grep "^$tag "`
       if [[ $? -eq 0 ]]; then
         echo "$tag = `echo $line | grep -oP '[0-9]+$' | numfmt --to=iec-i`"
         break
@@ -91,19 +97,37 @@ dhub() {
 
 # short-form of kubectl against current namespace
 alias k='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE}'
+# short-form of k9s against current namespace or all namespaces
+alias k9='k9s --namespace ${KUBENAMESPACE:-all} --headless'
 # list all resources of the current namespace
 alias ka='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get all'
+
+alias m=microk8s
+# short-form of kubectl against current namespace for microk8s
+alias mk='microk8s kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE}'
+# run microk8s kubectl against all namespaces
+alias amk='microk8s kubectl --all-namespaces=true'
 
 kns() {
   if [[ -n "$1" ]]; then
     export KUBENAMESPACE=$1
   else
-    options=(`k get ns --no-headers=true -o custom-columns=:metadata.name --sort-by=.metadata.name`)
-    select_option "${options[@]}"
-    ns=$?
-    export KUBENAMESPACE=${options[$ns]}
-    [[ "$KUBENAMESPACE" == 'default' ]] && export KUBENAMESPACE=
+    local options=()
+    while read line; do
+      options+=($line "")
+    done < <(k get ns --no-headers=true -o custom-columns=:metadata.name --sort-by=.metadata.name)
+    local ns=$(dialog \
+                      --no-lines \
+                      --clear \
+                      --backtitle "$KUBECONFIG" \
+                      --title "Current namespace: ${KUBENAMESPACE:-default}" \
+		      --default-item "${KUBENAMESPACE:-default}" \
+                      --menu "Switch to:" 0 0 0 \
+                      "${options[@]}" \
+                      2>&1 >/dev/tty)
+    export KUBENAMESPACE=$ns
   fi
+  [[ "$KUBENAMESPACE" == 'default' ]] && export KUBENAMESPACE=
 }
 
 # list all pods (or those matching given parameters) of current namespace
@@ -129,34 +153,51 @@ kps() {
 # find the most recent pod whose name matches the parameter
 # if the first parameter is a number n, it will find the nth most recent pod
 podname() {
+  # drop unsupported args from other commands
+  local skip=
+  for arg do
+    shift
+    [[ "$skip" == "all" ]] && continue
+    [[ -n $skip ]] && skip= && continue
+    skip= 
+    case $arg in
+      (--container=*) : ;;
+                 (-c) skip=yes ;;
+                 (--) skip=all ;;
+                  (*) set -- "$@" "$arg" ;;
+    esac
+  done
+
   checkarg "$1" "Parts of pod name is required"
-  name=$1
+  local name=$1
   shift
-  no=1
+  local no=1
   if [[ "$1" =~ ^[0-9]+$ ]]; then
     no=$1
     shift
   fi
-  ns=
-  while [[ -n $1 ]]; do 
-    if [[ "$1" == '-n' || "$1" == '--namespace' ]]; then ns="-n $2"; break; fi
-    shift
-  done;
-  k get pods --no-headers=true -o custom-columns=:metadata.name --sort-by=.status.startTime $ns | tac | awk '/'$name'/{i++}i=='${no}'{print;exit}'
+
+#  local ns=
+#  while [[ -n $1 ]]; do 
+#    if [[ "$1" == '-n' || "$1" == '--namespace' ]]; then ns="-n $2"; break; fi
+#    shift
+#  done;
+#  k get pods --no-headers=true -o custom-columns=:metadata.name --sort-by=.status.startTime $ns | tac | awk '/'$name'/{i++}i=='${no}'{print;exit}'
+  k get pods --no-headers=true -o custom-columns=:metadata.name --sort-by=.status.startTime "$@" | tac | awk '/'$name'/{i++}i=='${no}'{print;exit}'
 }
 
 # find the node name which the most recent matching pod name is running on
 # if the first parameter is a number n, it will find the nth most recent pod
 podnode() {
   checkarg "$1" "Parts of pod name is required"
-  name=$1
+  local name=$1
   shift
-  no=1
+  local no=1
   if [[ "$1" =~ ^[0-9]+$ ]]; then
     no=$1
     shift
   fi  
-  ns= 
+  local ns= 
   while [[ -n $1 ]]; do 
     if [[ "$1" == '-n' || "$1" == '--namespace' ]]; then ns="-n $2"; break; fi
     shift
@@ -172,7 +213,7 @@ kpws() {
   if [[ -z "$@" ]]; then
     watch -ctn1 "kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime | awk {'print "'$1" " $2" " $3" " $4" " $5" " $6" " $7'"'} | column -t"
   else
-    filter=`echo "NAME $@" | tr ' ' '|'`
+    local filter=`echo "NAME $@" | tr ' ' '|'`
     watch -ctn1 "kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get pods -o wide --sort-by=.status.startTime | awk {'print "'$1" " $2" " $3" " $4" " $5" " $6" " $7'"'} | column -t | grep --color=always -E -- '$filter'"
   fi
 }
@@ -181,79 +222,153 @@ alias kd='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} describe'
 kdpo() {
   checkconfig
   checkarg "$1" "Parts of pod name is required"
-  name=`podname $@`
+  local name=`podname $@`
   shift
   kd po ${name:?No pod matched}
 }
 
+# create resources described in one or more yaml files
+alias kcf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} create -f'
 # create/update resources described in one or more yaml files
 alias kaf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} apply -f'
+# replace resources described in one or more yaml files
+alias krf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} replace -f'
 # delete resources described in one or more yaml files
 alias kdf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} delete -f'
+# get events in the current namespace sorted by time
+kev() {
+  local command=( kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get events --sort-by=".metadata.creationTimestamp" -A )
+  if [[ $1 == 'Normal' || $1 == 'Warning' ]]; then
+    command+=( --field-selector=type=$1 )
+    shift
+  fi
+  "${command[@]}" "$@"
+}
+# get events in all namespaces sorted by time
+akev() {
+  local command=( kev --all-namespaces=true )
+  if [[ $1 == 'Normal' || $1 == 'Warning' ]]; then
+    command+=( --field-selector=type=$1 )
+    shift
+  fi
+  "${command[@]}" "$@"
+}
+
+kraf() {
+  local target=$1
+  local config=${2:-config}
+  krf `ls -1 ${target:?}/*.yml  | grep    "${config}" | tr "\n" "," | head -c -1`
+  kaf `ls -1 ${target:?}/*.yml  | grep -v "${config}" | tr "\n" "," | head -c -1`
+}
 
 # force delete one or more pods
 kdpf() {
   k delete po --grace-period=0 --force $@
 }
 kdpe() {
-  if [[ $1 != 'Error' && $1 != 'Evicted' ]]; then
-    echo "Please specify 'Error' or 'Evicted' pods to be deleted."
+  if [[ $1 != 'Error' && $1 != 'Evicted' && $1 != 'Terminating' && $1 != 'Completed' ]]; then
+    echo "Please specify 'Error', 'Evicted' or 'Terminating' pods to be deleted."
     return
   fi
-  k delete po `kp $1 | grep -oP '^[^ ]+' | tr '\n' ' '`
+  pods=`kp $1 2>/dev/null | grep -oP '^[^ ]+' | tr '\n' ' '`
+  shift
+  [[ -n $pods ]] && k delete po $pods "$@"
+}
+akdpe() {
+  if [[ $1 != 'Error' && $1 != 'Evicted' && $1 != 'Terminating' && $1 != 'Completed' ]]; then
+    echo "Please specify 'Error', 'Evicted' or 'Terminating' pods to be deleted."
+    return
+  fi
+  local currentNS=$KUBENAMESPACE
+  namespaces=`k get ns --no-headers=true -o custom-columns=:metadata.name --sort-by=.metadata.name`
+  local state=$1
+  shift
+  for ns in $namespaces; do
+    KUBENAMESPACE=$ns
+    kdpe $state "$@"
+  done
+  KUBENAMESPACE=$currentNS
+}
+kdpef() {
+  kdpe $1 --grace-period=0 --force
+}
+akdpef() {
+  akdpe $1 --grace-period=0 --force
 }
 
 # execute a command on the most recent pod whose name matches the first parameter
 ke() {
-  checkconfig
-  checkarg "$1" "Parts of pod name is required"
-  name=`podname $@`
-  shift
-  k exec -it ${name:?No pod matched} $@
+  kex 1 "$@"
 }
 # execute a command on the second most recent pod whose name matches the first parameter
 ke2() {
-  checkconfig
-  checkarg "$1" "Parts of pod name is required"
-  a1=$1
-  shift
-  name=`podname $a1 2 $@`
-  k exec -it ${name:?No pod matched} $@
+  kex 2 "$@"
 }
 # execute a command on the third most recent pod whose name matches the first parameter
 ke3() {
+  kex 3 "$@"
+}
+# execute a command on the most recent pod whose name/container matches the first parameter
+kec() {
+  local name=$1 && shift
+  kex 1 $name -c $name "$@"
+}
+# execute a command on the second most recent pod whose name/container matches the first parameter
+kec2() {
+  local name=$1 && shift
+  kex 2 $name -c $name "$@"
+}
+# execute a command on the third most recent pod whose name/container matches the first parameter
+kec3() {
+  local name=$1 && shift
+  kex 3 $name -c $name "$@"
+}
+# execute a command on the nth most recent pod whose name matches the first parameter
+kex() {
   checkconfig
-  checkarg "$1" "Parts of pod name is required"
-  a1=$1
+  local nth=$1
   shift
-  name=`podname $a1 3 $@`
+  checkarg "$1" "Parts of pod name is required"
+  local a1=$1
+  shift
+  local name=`podname $a1 $nth $@`
   k exec -it ${name:?No pod matched} $@
 }
 # view and follow log of the most recent pod whose name matches the first parameter
 kl() {
-  checkconfig
-  checkarg "$1" "Parts of pod name is required"
-  name=`podname $@`
-  shift
-  k logs -f ${name:?No pod matched} --tail=2000 $@
+  klx 1 "$@"
 }
 # view and follow log of the second most recent pod whose name matches the first parameter
 kl2() {
-  checkconfig
-  checkarg "$1" "Parts of pod name is required"
-  a1=$1
-  shift
-  name=`podname $a1 2 $@`
-  k logs -f ${name:?No pod matched} --tail=2000 $@
+  klx 2 "$@"
 }
 # view and follow log of the third most recent pod whose name matches the first parameter
 kl3() {
+  klx 3 "$@"
+}
+# view and follow log of the nth most recent pod whose name matches the first parameter
+klx() {
   checkconfig
-  checkarg "$1" "Parts of pod name is required"
-  a1=$1
+  local nth=$1
   shift
-  name=`podname $a1 3 $@`
-  k logs -f ${name:?No pod matched} --tail=2000 $@
+  checkarg "$1" "Parts of pod name is required"
+  local a1=$1
+  shift
+  local name=`podname $a1 $nth $@`
+  k logs -f ${name:?No pod matched} --tail=2000 "$@"
+}
+# view and follow logs of the container with same name as first parameter
+klc() {
+  local name=$1 && shift
+  klx 1 $name -c $name "$@"
+}
+klc2() {
+  local name=$1 && shift
+  klx 2 $name -c $name "$@"
+}
+klc3() {
+  local name=$1 && shift
+  klx 3 $name -c $name "$@"
 }
 
 # run kubectl against all namespaces
@@ -267,13 +382,23 @@ akstats() {
 }
 
 # scale one or more deployments to a specified number of replicas (first parameter)
-ks() {
-  repl=1
+kst() {
+  local type=$1
+  shift
+  local repl=1
   if [[ "$1" =~ ^[0-9]+$ ]]; then
-    repl=$1
+    local repl=$1
     shift
   fi  
-  k scale --replicas=$repl deploy $@
+  k scale --replicas=$repl $type $@
+}
+
+ks() {
+  kst deploy "$@"
+}
+
+kss() {
+  kst statefulset "$@"
 }
 
 # scale one or more deployments to 0 replicas
@@ -319,13 +444,28 @@ alias ta='terraform apply'
 alias tay='terraform apply -auto-approve'
 alias ti='terraform import'
 tpt() {
-  terraform plan -target=$1
+  local command
+  command=( terraform plan )
+  for t in "$@"; do
+    command+=( -target="$t" )
+  done
+  "${command[@]}"
 }
 tat() {
-  terraform apply -target=$1
+  local command
+  command=( terraform apply )
+  for t in "$@"; do
+    command+=( -target="$t" )
+  done
+  "${command[@]}"
 }
 taty() {
-  terraform apply -auto-approve -target=$1
+  local command
+  command=( terraform apply -auto-approve )
+  for t in "$@"; do
+    command+=( -target="$t" )
+  done
+  "${command[@]}"
 }
 
 # compute password hash using different algorithms
@@ -347,7 +487,7 @@ hashpassword() {
 # generate a random password with different hashing algorithms
 randompasswordstring() {
   for i in {1..100}; do
-    PASS=`openssl rand -base64 17`
+    local PASS=`openssl rand -base64 17`
     PASS=${PASS//=/@}
     PASS=${PASS//+/@}
     PASS=${PASS//\//@}
@@ -358,17 +498,17 @@ randompasswordstring() {
 randompassword() {
   if [ -z $1 ]; then
     echo 'Generating random password...'
-    PASS=`randompasswordstring`
+    local PASS=`randompasswordstring`
   else
     echo 'Hashing given base64 password...'
-    PASS=`echo -n $1 | base64 -d`
+    local PASS=`echo -n $1 | base64 -d`
   fi
 
   hashpassword $PASS
 }
 randompasswords() {
   for i in {1..10}; do
-    PASS=`randompasswordstring`
+    local PASS=`randompasswordstring`
     echo -n "$i. "
     echo -n $PASS | base64 -w0
     echo
@@ -377,66 +517,10 @@ randompasswords() {
 
 # erase all duplicate commands in bash history
 erasedups() {
-  tac $HISTFILE | awk '!x[$0]++' | tac | grep -vP '^(.+[ \t]|(ll|ls|mv|cd|cp|rm|mkdir|echo|cat|kdpf|vi|php|grep|alias) .+|(exit|history).*)$' | sponge $HISTFILE
+  [[ ! -f $HISTFILE.`date +'%Y%m%d%H'` ]] && cp $HISTFILE $HISTFILE.`date +'%Y%m%d%H'`
+  tac $HISTFILE | awk '!x[$0]++' | tac | grep -vP '^(.+[ \t]|(ll|ls|mv|cd|cp|rm|mkdir|echo|cat|kdpf|vi|php|grep|alias|export) .+|(exit|history).*)$' | sponge $HISTFILE
 }
 
-# https://unix.stackexchange.com/questions/146570/arrow-key-enter-menu
-select_option() {
-
-    # little helpers for terminal print control and key input
-    ESC=$( printf "\033")
-    cursor_blink_on()  { printf "$ESC[?25h"; }
-    cursor_blink_off() { printf "$ESC[?25l"; }
-    cursor_to()        { printf "$ESC[$1;${2:-1}H"; }
-    print_option()     { printf "   $1 "; }
-    print_selected()   { printf "  $ESC[7m $1 $ESC[27m"; }
-    get_cursor_row()   { IFS=';' read -sdR -p $'\E[6n' ROW COL; echo ${ROW#*[}; }
-    key_input()        { read -s -n3 key 2>/dev/null >&2
-                         if [[ $key = $ESC[A ]]; then echo up;    fi
-                         if [[ $key = $ESC[B ]]; then echo down;  fi
-                         if [[ $key = ""     ]]; then echo enter; fi; }
-
-    # initially print empty new lines (scroll down if at bottom of screen)
-    for opt; do printf "\n"; done
-
-    # determine current screen position for overwriting the options
-    local lastrow=`get_cursor_row`
-    local startrow=$(($lastrow - $#))
-
-    # ensure cursor and input echoing back on upon a ctrl+c during read -s
-    trap "cursor_blink_on; stty echo; printf '\n'; exit" 2
-    cursor_blink_off
-
-    local selected=0
-    while true; do
-        # print options by overwriting the last lines
-        local idx=0
-        for opt; do
-            cursor_to $(($startrow + $idx))
-            if [ $idx -eq $selected ]; then
-                print_selected "$opt"
-            else
-                print_option "$opt"
-            fi
-            ((idx++))
-        done
-
-        # user key control
-        case `key_input` in
-            enter) break;;
-            up)    ((selected--));
-                   if [ $selected -lt 0 ]; then selected=$(($# - 1)); fi;;
-            down)  ((selected++));
-                   if [ $selected -ge $# ]; then selected=0; fi;;
-        esac
-    done
-
-    # cursor position back to normal
-    cursor_to $lastrow
-    printf "\n"
-    cursor_blink_on
-
-    trap - 2
-
-    return $selected
+json2yaml() {
+  yq eval -P <(echo ${1:?required})
 }
