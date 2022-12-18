@@ -3,6 +3,33 @@ Useful bash aliases
 
 ## Installation
 
+Clone this repo.
+
+```
+gh repo clone t7tran/aliases ~/git/aliases
+```
+
+Back up and sym-link the aliases.
+
+```
+mv ~/.bash_aliases ~/.bash_aliases.old
+ln -s ~/git/aliases/.bash_aliases ~/.bash_aliases
+
+```
+
+Open new terminal or reload with `. ~/.bash_aliases`.
+
+Combining these aliases with .inputrc tweak will probably improve your productivity.
+
+```
+mv ~/.inputrc ~/.inputrc.old
+ln -s ~/git/aliases/.inputrc ~/.inputrc
+```
+
+Once ~/.inputrc is created and console is relaunched, type first part of the command then traverse history with up/down arrows.
+
+## Altenative Installation
+
 Place in ~/.bash_aliases and open new terminal or reload with `. ~/.bash_aliases`.
 The following command will replace ~/.bash_aliases with the latest copy from this repo.
 
