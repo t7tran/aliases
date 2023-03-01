@@ -228,13 +228,29 @@ kdpo() {
 }
 
 # create resources described in one or more yaml files
-alias kcf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} create -f'
+kcf() {
+  for a in "$@"; do
+    kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} create -f "$a"
+  done
+}
 # create/update resources described in one or more yaml files
-alias kaf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} apply -f'
+kaf() {
+  for a in "$@"; do
+    kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} apply -f "$a"
+  done
+}
 # replace resources described in one or more yaml files
-alias krf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} replace -f'
+krf() {
+  for a in "$@"; do
+    kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} replace -f "$a"
+  done
+}
 # delete resources described in one or more yaml files
-alias kdf='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} delete -f'
+kdf() {
+  for a in "$@"; do
+    kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} delete -f "$a"
+  done
+}
 # get events in the current namespace sorted by time
 kev() {
   local command=( kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get events --sort-by=".metadata.creationTimestamp" -A )
