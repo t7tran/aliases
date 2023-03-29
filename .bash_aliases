@@ -282,17 +282,19 @@ kdpf() {
   k delete po --grace-period=0 --force $@
 }
 kdpe() {
-  if [[ $1 != 'Error' && $1 != 'Evicted' && $1 != 'Terminating' && $1 != 'Completed' ]]; then
-    echo "Please specify 'Error', 'Evicted' or 'Terminating' pods to be deleted."
+  if [[ $1 == *Running* ]]; then
+    echo "'Running' is disallowed."
     return
   fi
-  pods=`kp $1 2>/dev/null | grep -oP '^[^ ]+' | tr '\n' ' '`
-  shift
-  [[ -n $pods ]] && k delete po $pods "$@"
+  for s in $1; do
+    pods=`kp $s 2>/dev/null | grep -oP '^[^ ]+' | tr '\n' ' '`
+    shift
+    [[ -n $pods ]] && k delete po $pods "$@"
+  done
 }
 akdpe() {
-  if [[ $1 != 'Error' && $1 != 'Evicted' && $1 != 'Terminating' && $1 != 'Completed' ]]; then
-    echo "Please specify 'Error', 'Evicted' or 'Terminating' pods to be deleted."
+  if [[ $1 == *Running* ]]; then
+    echo "'Running' is disallowed."
     return
   fi
   local currentNS=$KUBENAMESPACE
@@ -301,7 +303,7 @@ akdpe() {
   shift
   for ns in $namespaces; do
     KUBENAMESPACE=$ns
-    kdpe $state "$@"
+    kdpe "$state" "$@"
   done
   KUBENAMESPACE=$currentNS
 }
