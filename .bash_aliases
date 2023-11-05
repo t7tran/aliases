@@ -443,6 +443,14 @@ kmemalloc() {
   kutil | grep % | awk '{print $5}' | awk '{ sum += $1 } END { if (NR > 0) { print sum/(NR*150), "%\n" } }'
 }
 
+ksecrets() {
+  local namespace
+  if [[ -z $KUBENAMESPACE ]]; then
+    read -p "Namespace: " namespace
+  fi
+  k get secret ${KUBENAMESPACE:-$namespace} -n ${KUBENAMESPACE:-$namespace} -ojson | jq -r '.data | map_values(@base64d)'
+}
+
 alias h='helm'
 alias htf='helm template "../${PWD##*/}" --output-dir build -f'
 
