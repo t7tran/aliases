@@ -50,6 +50,8 @@ alias dips='docker inspect -f "{{.Name}} - {{.NetworkSettings.IPAddress }}" $(do
 dc() {
   if [[ -f run-config/docker-compose.yml ]]; then
     docker-compose --project-directory run-config -f run-config/docker-compose.yml "$@"
+  elif [[ -f run-config/docker-compose.yaml ]]; then
+    docker-compose --project-directory run-config -f run-config/docker-compose.yaml "$@"
   elif [[ -x run-config/docker-compose.sh ]]; then
     ./run-config/docker-compose.sh "$@"
   elif [[ -x docker-compose.sh ]]; then
@@ -541,4 +543,18 @@ erasedups() {
 
 json2yaml() {
   yq eval -P <(echo ${1:?required})
+}
+
+mysql_proxy_connect() {
+  user=${1:?Username required}
+  shift
+  MYSQL_PWD=`gcloud auth print-access-token` mysql -h 127.0.0.1 --enable-cleartext-plugin -A -u "$user" "$@"
+}
+
+postgres_proxy_connect() {
+  local db user
+  [[ "$@" == *" -d "* || "$@" == *" --dbname"* ]] || db=postgres
+  user=${1:?Username required}
+  shift
+  PGPASSWORD=`gcloud sql generate-login-token` psql -h 127.0.0.1 -U "$user" "$@" $db
 }
