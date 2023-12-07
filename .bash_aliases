@@ -241,6 +241,14 @@ kaf() {
     kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} apply -f "$a"
   done
 }
+# generate and apply
+gkaf() {
+  if [[ ! -x ../generate.sh ]]; then
+    echo No ../generate.sh script found.
+    return
+  fi
+  ../generate.sh ${PWD##*/} "$@" && kaf "$@"
+}
 # replace resources described in one or more yaml files
 krf() {
   for a in "$@"; do
