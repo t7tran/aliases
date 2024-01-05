@@ -100,7 +100,7 @@ dhub() {
 # short-form of kubectl against current namespace
 alias k='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE}'
 # short-form of k9s against current namespace or all namespaces
-alias k9='k9s --namespace ${KUBENAMESPACE:-all} --headless'
+alias k9='K9S_CONFIG_DIR=~/.local/share/k9s k9s --namespace ${KUBENAMESPACE:-all} --headless'
 # list all resources of the current namespace
 alias ka='kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} get all'
 
