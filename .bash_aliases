@@ -232,13 +232,17 @@ kdpo() {
 # create resources described in one or more yaml files
 kcf() {
   for a in "$@"; do
-    kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} create -f "$a"
+    for f in `find . -mindepth 1 -maxdepth 1 -type d -name "*${a%/}*"`; do
+      kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} create -f "$f"
+    done
   done
 }
 # create/update resources described in one or more yaml files
 kaf() {
   for a in "$@"; do
-    kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} apply -f "$a"
+    for f in `find . -mindepth 1 -maxdepth 1 -type d -name "*${a%/}*"`; do
+      kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} apply -f "$f"
+    done
   done
 }
 # generate and apply
@@ -252,13 +256,17 @@ gkaf() {
 # replace resources described in one or more yaml files
 krf() {
   for a in "$@"; do
-    kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} replace -f "$a"
+    for f in `find . -mindepth 1 -maxdepth 1 -type d -name "*${a%/}*"`; do
+      kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} replace -f "$f"
+    done
   done
 }
 # delete resources described in one or more yaml files
 kdf() {
   for a in "$@"; do
-    kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} delete -f "$a"
+    for f in `find . -mindepth 1 -maxdepth 1 -type d -name "*${a%/}*"`; do
+      kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} delete -f "$f"
+    done
   done
 }
 # get events in the current namespace sorted by time
