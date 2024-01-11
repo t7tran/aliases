@@ -229,10 +229,20 @@ kdpo() {
   kd po ${name:?No pod matched}
 }
 
+target_selection() {
+  if [[ "$1" =~ '/' && ! "$1" == */ ]]; then
+    echo "$1";
+  elif [[ "$1" =~ '*' ]]; then
+    echo "$1";
+  else
+    find . -mindepth 1 -maxdepth 1 -type d -name "*${1%/}*"
+  fi
+}
+
 # create resources described in one or more yaml files
 kcf() {
   for a in "$@"; do
-    for f in `find . -mindepth 1 -maxdepth 1 -type d -name "*${a%/}*"`; do
+    for f in `target_selection "$a"`; do
       kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} create -f "$f"
     done
   done
@@ -240,7 +250,7 @@ kcf() {
 # create/update resources described in one or more yaml files
 kaf() {
   for a in "$@"; do
-    for f in `find . -mindepth 1 -maxdepth 1 -type d -name "*${a%/}*"`; do
+    for f in `target_selection "$a"`; do
       kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} apply -f "$f"
     done
   done
@@ -256,7 +266,7 @@ gkaf() {
 # replace resources described in one or more yaml files
 krf() {
   for a in "$@"; do
-    for f in `find . -mindepth 1 -maxdepth 1 -type d -name "*${a%/}*"`; do
+    for f in `target_selection "$a"`; do
       kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} replace -f "$f"
     done
   done
@@ -264,7 +274,7 @@ krf() {
 # delete resources described in one or more yaml files
 kdf() {
   for a in "$@"; do
-    for f in `find . -mindepth 1 -maxdepth 1 -type d -name "*${a%/}*"`; do
+    for f in `target_selection "$a"`; do
       kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} delete -f "$f"
     done
   done
