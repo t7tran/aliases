@@ -17,6 +17,7 @@ mvnjenkins() {
   docker rm $id
 }
 
+alias lh='ls -alh'
 alias watch='watch -tn1 '
 
 alias d='docker'
@@ -230,9 +231,7 @@ kdpo() {
 }
 
 target_selection() {
-  if [[ "$1" =~ '/' && ! "$1" == */ ]]; then
-    echo "$1";
-  elif [[ "$1" =~ '*' ]]; then
+  if [[ "$1" =~ '/' || "$1" =~ '*' ]]; then
     echo "$1";
   else
     find . -mindepth 1 -maxdepth 1 -type d -name "*${1%/}*"
@@ -255,13 +254,17 @@ kaf() {
     done
   done
 }
-# generate and apply
-gkaf() {
+# generate
+g() {
   if [[ ! -x ../generate.sh ]]; then
     echo No ../generate.sh script found.
     return
   fi
-  ../generate.sh ${PWD##*/} "$@" && kaf "$@"
+  ../generate.sh ${PWD##*/} "$@"
+}
+# generate and apply
+gkaf() {
+  g "$@" && kaf "$@"
 }
 # replace resources described in one or more yaml files
 krf() {
@@ -471,10 +474,11 @@ kmemalloc() {
 
 ksecrets() {
   local namespace
-  if [[ -z $KUBENAMESPACE ]]; then
+  namespace=${KUBENAMESPACE:-$1}
+  if [[ -z $namespace ]]; then
     read -p "Namespace: " namespace
   fi
-  k get secret ${KUBENAMESPACE:-$namespace} -n ${KUBENAMESPACE:-$namespace} -ojson | jq -r '.data | map_values(@base64d)'
+  k get secret $namespace -n $namespace -ojson | jq -r '.data | map_values(@base64d)'
 }
 
 alias h='helm'
