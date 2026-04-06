@@ -42,6 +42,8 @@ alias dru='docker run -u $(id -u):$(id -g) -it --rm -v "$PWD":/pwd:z'
 alias drw='docker run -it --rm -v "$PWD":/pwd:z -w /pwd'
 # execute a command inside a container
 alias de='docker exec -it'
+alias des='docker exec -it $(docker ps -q -l) sh'
+alias deb='docker exec -it $(docker ps -q -l) bash'
 # view and follow log of a container
 alias dl='docker logs -f'
 # view stats of all running containers with name column
