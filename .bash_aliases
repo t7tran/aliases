@@ -42,13 +42,18 @@ alias dru='docker run -u $(id -u):$(id -g) -it --rm -v "$PWD":/pwd:z'
 alias drw='docker run -it --rm -v "$PWD":/pwd:z -w /pwd'
 # execute a command inside a container
 alias de='docker exec -it'
-alias des='docker exec -it $(docker ps -q -l) sh'
-alias deb='docker exec -it $(docker ps -q -l) bash'
 # view and follow log of a container
 alias dl='docker logs -f'
 # view stats of all running containers with name column
 alias ds='docker stats $(docker ps --format={{.Names}})'
 alias dips='docker inspect -f "{{.Name}} - {{.NetworkSettings.IPAddress }}" $(docker ps -aq)'
+
+des() {
+  docker exec -it "$@" $(docker ps -q -l) sh
+}
+deb() {
+  docker exec -it "$@" $(docker ps -q -l) bash
+}
 
 dc() {
   if [[ -f run-config/docker-compose.yml ]]; then
@@ -256,6 +261,13 @@ kaf() {
     done
   done
 }
+kafs() {
+  for a in "$@"; do
+    for f in `target_selection "$a"`; do
+      kubectl ${KUBENAMESPACE:+--namespace $KUBENAMESPACE} apply --server-side --force-conflicts -f "$f"
+    done
+  done
+}
 # generate
 g() {
   if [[ ! -x ../generate.sh ]]; then
@@ -267,6 +279,9 @@ g() {
 # generate and apply
 gkaf() {
   g "$@" && kaf "$@"
+}
+gkafs() {
+  g "$@" && kafs "$@"
 }
 # replace resources described in one or more yaml files
 krf() {
